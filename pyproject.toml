@@ -9,7 +9,20 @@ package-mode = false
 
 [tool.poetry.dependencies]
 python = "^3.13"
+attrs = "^24.2.0"
+cattrs = "^24.1.2"
+orjson = "^3.10.9"
 
+[tool.pyright]
+venv = ".venv"
+venvPath = "."
+
+[tool.ruff]
+target-version = "py313"
+
+[tool.ruff.format]
+docstring-code-format = true
+quote-style = "single"
 
 [build-system]
 requires = ["poetry-core"]
