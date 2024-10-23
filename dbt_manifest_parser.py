@@ -1,13 +1,17 @@
+import os
 from pathlib import Path
 from typing import Iterable, cast
 
 import attrs
+import cattrs
 from dbt.artifacts.schemas.manifest import WritableManifest as _WritableManifest
 from dbt.compilation import Linker as _Linker
 from dbt.contracts.graph.manifest import Manifest as _Manifest
 from dbt.contracts.graph.nodes import ModelNode as _ModelNode
 from dbt.graph.graph import Graph as _Graph
 from dbt.graph.graph import UniqueId as _UniqueId
+
+SCHEDULING_CONFIG = os.environ.get('SCHEDULING_CONFIG', 'scheduling_config')
 
 
 def _read_manifest(manifest: Path) -> _WritableManifest:
@@ -57,6 +61,26 @@ def _build_graph(manifest: _Manifest) -> _Graph:
     return _Linker().get_graph(manifest)
 
 
+@attrs.frozen
+class SchedulingConfig:
+    schedule: str
+
+
+def _get_scheduling_configs(
+    model_nodes: dict[str, _ModelNode],
+) -> dict[str, SchedulingConfig]:
+    """
+    Retrieve the scheduling configurations for the models.
+    """
+    configs = {}
+    for node in model_nodes.values():
+        configs[node.unique_id] = cattrs.structure(
+            obj=node.unrendered_config.get(SCHEDULING_CONFIG, {}),
+            cl=SchedulingConfig,
+        )
+    return configs
+
+
 Selector = str
 
 
@@ -73,6 +97,7 @@ class Reference:
     this: Selector
     parents: tuple[Selector, ...]
     children: tuple[Selector, ...]
+    scheduling_config: SchedulingConfig
 
 
 class Index(tuple[Reference, ...]):
@@ -95,6 +120,7 @@ class Index(tuple[Reference, ...]):
 
         def _collect_references() -> Iterable[Reference]:
             model_nodes = _get_model_nodes(manifest=_manifest)
+            scheduling_configs = _get_scheduling_configs(model_nodes=model_nodes)
             graph = _build_graph(manifest=_manifest)
             for node in model_nodes:
                 node = cast(_UniqueId, node)
@@ -112,6 +138,7 @@ class Index(tuple[Reference, ...]):
                     this=_remove_prefix(node),
                     parents=tuple(parents),
                     children=tuple(children),
+                    scheduling_config=scheduling_configs[node],
                 )
 
         return Index(_collect_references())
@@ -123,4 +150,5 @@ if __name__ == '__main__':
         print(reference.this)
         print(reference.parents)
         print(reference.children)
+        print(reference.scheduling_config.schedule)
         print()
