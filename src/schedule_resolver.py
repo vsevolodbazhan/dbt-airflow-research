@@ -204,6 +204,125 @@ class DagRun:
             ),
             id='downstream_weekly_and_upstream_is_hourly',
         ),
+        pytest.param(
+            DagRun(
+                '2023-12-29 00:00:00',
+                '2024-01-05 00:00:00',
+                '0 0 * * 5',
+            ),
+            '0 0 * * *',
+            (
+                logical_date.isoformat()
+                for logical_date in pendulum.interval(
+                    pendulum.parse('2023-12-29 00:00:00'),  # type: ignore
+                    pendulum.parse('2024-01-04 00:00:00'),  # type: ignore
+                ).range(unit='days')
+            ),
+            id='downstream_weekly_and_upstream_is_daily',
+        ),
+        pytest.param(
+            DagRun(
+                '2023-12-29 00:00:00',
+                '2024-01-05 00:00:00',
+                '0 0 * * 5',
+            ),
+            '30 0 * * 5',
+            ['2023-12-29 00:30:00'],
+            id='downstream_weekly_and_upstream_is_weekly',
+        ),
+        pytest.param(
+            DagRun(
+                '2023-12-29 00:00:00',
+                '2024-01-05 00:00:00',
+                '0 0 * * 5',
+            ),
+            '30 0 5 * *',
+            ['2023-12-05 00:30:00'],
+            id='downstream_weekly_and_upstream_is_monthly',
+        ),
+        pytest.param(
+            DagRun(
+                '2023-12-29 00:00:00',
+                '2024-01-05 00:00:00',
+                '0 0 * * 5',
+            ),
+            '30 0 5 10 *',
+            ['2023-10-05 00:30:00'],
+            id='downstream_weekly_and_upstream_is_yearly',
+        ),
+        pytest.param(
+            DagRun(
+                '2023-10-05 00:30:00',
+                '2024-10-05 00:30:00',
+                '30 0 5 10 *',
+            ),
+            '30 * * * *',
+            (
+                logical_date.isoformat()
+                for logical_date in pendulum.interval(
+                    pendulum.parse('2023-10-05 00:30:00'),  # type: ignore
+                    pendulum.parse('2024-10-04 23:30:00'),  # type: ignore
+                ).range(unit='hours')
+            ),
+            id='downstream_yearly_and_upstream_is_hourly',
+        ),
+        pytest.param(
+            DagRun(
+                '2023-10-05 00:30:00',
+                '2024-10-05 00:30:00',
+                '30 0 5 10 *',
+            ),
+            '0 0 * * *',
+            (
+                logical_date.isoformat()
+                for logical_date in pendulum.interval(
+                    pendulum.parse('2023-10-06 00:00:00'),  # type: ignore
+                    pendulum.parse('2024-10-05 00:00:00'),  # type: ignore
+                ).range(unit='days')
+            ),
+            id='downstream_yearly_and_upstream_is_daily',
+        ),
+        pytest.param(
+            DagRun(
+                '2023-10-05 00:30:00',
+                '2024-10-05 00:30:00',
+                '30 0 5 10 *',
+            ),
+            '30 0 * * 5',
+            (
+                logical_date.isoformat()
+                for logical_date in pendulum.interval(
+                    pendulum.parse('2023-10-06 00:30:00'),  # type: ignore
+                    pendulum.parse('2024-10-04 00:30:00'),  # type: ignore
+                ).range(unit='weeks')
+            ),
+            id='downstream_yearly_and_upstream_is_weekly',
+        ),
+        pytest.param(
+            DagRun(
+                '2023-10-05 00:30:00',
+                '2024-10-05 00:30:00',
+                '30 0 5 10 *',
+            ),
+            '30 0 5 * *',
+            (
+                logical_date.isoformat()
+                for logical_date in pendulum.interval(
+                    pendulum.parse('2023-10-05 00:30:00'),  # type: ignore
+                    pendulum.parse('2024-09-05 00:30:00'),  # type: ignore
+                ).range(unit='months')
+            ),
+            id='downstream_yearly_and_upstream_is_monthly',
+        ),
+        pytest.param(
+            DagRun(
+                '2023-10-05 00:30:00',
+                '2024-10-05 00:30:00',
+                '30 0 5 10 *',
+            ),
+            '30 0 4 10 *',
+            ['2024-10-04 00:30:00'],
+        ),
     ],
 )
 def test_upstream_logical_date_resolves_correctly(
