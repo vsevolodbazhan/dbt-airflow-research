@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from typing import Iterable, cast
 
@@ -10,8 +9,6 @@ from dbt.contracts.graph.manifest import Manifest as _Manifest
 from dbt.contracts.graph.nodes import ModelNode as _ModelNode
 from dbt.graph.graph import Graph as _Graph
 from dbt.graph.graph import UniqueId as _UniqueId
-
-SCHEDULING_CONFIG = os.environ.get('SCHEDULING_CONFIG', 'scheduling_config')
 
 
 def _read_manifest(manifest: Path) -> _WritableManifest:
@@ -68,6 +65,8 @@ class SchedulingConfig:
 
 def _get_scheduling_configs(
     model_nodes: dict[str, _ModelNode],
+    key: str,
+    cls: type[SchedulingConfig],
 ) -> dict[str, SchedulingConfig]:
     """
     Retrieve the scheduling configurations for the models.
@@ -75,8 +74,8 @@ def _get_scheduling_configs(
     configs = {}
     for node in model_nodes.values():
         configs[node.unique_id] = cattrs.structure(
-            obj=node.unrendered_config.get(SCHEDULING_CONFIG, {}),
-            cl=SchedulingConfig,
+            obj=node.unrendered_config.get(key, {}),
+            cl=cls,
         )
     return configs
 
@@ -107,7 +106,11 @@ class Index(tuple[Reference, ...]):
     """
 
     @staticmethod
-    def from_manifest(manifest: Path) -> 'Index':
+    def from_manifest(
+        manifest: Path,
+        scheduling_config_key: str,
+        scheduling_config_cls: type[SchedulingConfig],
+    ) -> 'Index':
         writable_manifest = _read_manifest(manifest=manifest)
         _manifest = _parse_manifest(manifest=writable_manifest)
         project_name = _get_project_name(manifest=writable_manifest)
@@ -120,7 +123,11 @@ class Index(tuple[Reference, ...]):
 
         def _collect_references() -> Iterable[Reference]:
             model_nodes = _get_model_nodes(manifest=_manifest)
-            scheduling_configs = _get_scheduling_configs(model_nodes=model_nodes)
+            scheduling_configs = _get_scheduling_configs(
+                model_nodes=model_nodes,
+                key=scheduling_config_key,
+                cls=scheduling_config_cls,
+            )
             graph = _build_graph(manifest=_manifest)
             for node in model_nodes:
                 node = cast(_UniqueId, node)
@@ -145,7 +152,11 @@ class Index(tuple[Reference, ...]):
 
 
 if __name__ == '__main__':
-    index = Index.from_manifest(manifest=Path('tests/manifest-prod.json'))
+    index = Index.from_manifest(
+        manifest=Path('tests/manifest-prod.json'),
+        scheduling_config_key='spire_config',
+        scheduling_config_cls=SchedulingConfig,
+    )
     for reference in index:
         print(reference.this)
         print(reference.parents)

@@ -13,6 +13,9 @@ attrs = "^24.2.0"
 cattrs = "^24.1.2"
 orjson = "^3.10.9"
 dbt-core = "^1.8.7"
+croniter = "^3.0.3"
+pendulum = "^3.0.0"
+pytest = "^8.3.3"
 
 [tool.pyright]
 venv = ".venv"
