@@ -1,3 +1,5 @@
+from typing import Iterable
+
 import attrs
 import pendulum
 import pytest
@@ -6,27 +8,6 @@ from croniter import croniter, croniter_range
 
 class FailedToResolveDependencyLogicalDate(Exception):
     pass
-
-
-def resolve_downstream_logical_date(
-    data_interval_end: pendulum.DateTime,
-    downstream_schedule: str,
-):
-    try:
-        cron_expression = croniter(
-            downstream_schedule,
-            min(
-                croniter_range(
-                    start=data_interval_end,
-                    stop=data_interval_end + pendulum.duration(years=1),
-                    expr_format=downstream_schedule,
-                    ret_type=pendulum.DateTime,
-                )
-            ),
-        )
-        return cron_expression.get_prev(ret_type=pendulum.DateTime)
-    except Exception as error:
-        raise FailedToResolveDependencyLogicalDate from error
 
 
 def min_or_none(iterable):
@@ -43,18 +24,20 @@ def max_or_none(iterable):
         return None
 
 
-def resolve_upstream_logical_date(
+def resolve_upstream_logical_dates(
     data_interval_start: pendulum.DateTime,
     data_interval_end: pendulum.DateTime,
     upstream_schedule: str,
-):
+) -> list[pendulum.DateTime]:
     try:
-        # We try to find the latest logical date within the data interval
+        # We try to find the latest logical dates within the data interval
         # that satisfies the upstream schedule.
-        return min_or_none(
+        result = list(
             croniter_range(
+                # We want to include the data interval start in the search
+                # but exclude the data interval end hence the -1 second.
                 start=data_interval_start,
-                stop=data_interval_end,
+                stop=data_interval_end - pendulum.duration(seconds=1),
                 expr_format=upstream_schedule,
                 ret_type=pendulum.DateTime,
                 exclude_ends=False,
@@ -62,15 +45,18 @@ def resolve_upstream_logical_date(
             # If we can't find any logical date within the data interval
             # that satisfies the upstream schedule, we try to find the latest
             # logical date up to the end of the data interval.
-        ) or max(
-            croniter_range(
-                start=data_interval_end - pendulum.duration(years=2),
-                stop=data_interval_end,
-                expr_format=upstream_schedule,
-                ret_type=pendulum.DateTime,
-                exclude_ends=False,
+        ) or [
+            max(
+                croniter_range(
+                    start=data_interval_start - pendulum.duration(years=1),
+                    stop=data_interval_end,
+                    expr_format=upstream_schedule,
+                    ret_type=pendulum.DateTime,
+                    exclude_ends=True,
+                )
             )
-        )
+        ]
+        return result
     except Exception as error:
         raise FailedToResolveDependencyLogicalDate from error
 
@@ -93,7 +79,7 @@ class DagRun:
     [
         'downstream_run',
         'upstream_schedule',
-        'expected_upstream_logical_date',
+        'expected_upstream_logical_dates',
     ],
     [
         pytest.param(
@@ -103,7 +89,7 @@ class DagRun:
                 '0 * * * *',
             ),
             '0 * * * *',
-            '2024-01-01 00:00:00',
+            ['2024-01-01 00:00:00'],
             id='downstream_has_same_schedule_as_upstream',
         ),
         pytest.param(
@@ -113,7 +99,7 @@ class DagRun:
                 '0 * * * *',
             ),
             '30 0 * * *',
-            '2024-01-01 00:30:00',
+            ['2024-01-01 00:30:00'],
             id='downstream_hourly_and_upstream_is_daily',
         ),
         pytest.param(
@@ -123,7 +109,7 @@ class DagRun:
                 '0 * * * *',
             ),
             '30 0 * * 5',
-            '2023-12-29 00:30:00',
+            ['2023-12-29 00:30:00'],
             id='downstream_hourly_and_upstream_is_weekly',
         ),
         pytest.param(
@@ -133,7 +119,7 @@ class DagRun:
                 '0 * * * *',
             ),
             '30 0 5 * *',
-            '2023-12-05 00:30:00',
+            ['2023-12-05 00:30:00'],
             id='downstream_hourly_and_upstream_is_monthly',
         ),
         pytest.param(
@@ -143,7 +129,7 @@ class DagRun:
                 '0 * * * *',
             ),
             '30 0 5 10 *',
-            '2023-10-05 00:30:00',
+            ['2023-10-05 00:30:00'],
             id='downstream_hourly_and_upstream_is_yearly',
         ),
         pytest.param(
@@ -153,7 +139,13 @@ class DagRun:
                 '0 0 * * *',
             ),
             '30 * * * *',
-            '2024-01-01 00:30:00',
+            (
+                logical_date.isoformat()
+                for logical_date in pendulum.interval(
+                    pendulum.parse('2024-01-01 00:30:00'),  # type: ignore
+                    pendulum.parse('2024-01-01 23:30:00'),  # type: ignore
+                ).range(unit='hours')
+            ),
             id='downstream_daily_and_upstream_is_hourly',
         ),
         pytest.param(
@@ -163,7 +155,7 @@ class DagRun:
                 '0 0 * * *',
             ),
             '0 0 * * *',
-            '2024-01-01 00:00:00',
+            ['2024-01-01 00:00:00'],
             id='downstream_daily_and_upstream_is_daily',
         ),
         pytest.param(
@@ -173,7 +165,7 @@ class DagRun:
                 '0 0 * * *',
             ),
             '30 0 * * 5',
-            '2023-12-29 00:30:00',
+            ['2023-12-29 00:30:00'],
             id='downstream_daily_and_upstream_is_weekly',
         ),
         pytest.param(
@@ -183,7 +175,7 @@ class DagRun:
                 '0 0 * * *',
             ),
             '30 0 5 * *',
-            '2023-12-05 00:30:00',
+            ['2023-12-05 00:30:00'],
             id='downstream_daily_and_upstream_is_monthly',
         ),
         pytest.param(
@@ -193,7 +185,8 @@ class DagRun:
                 '0 0 * * *',
             ),
             '30 0 5 10 *',
-            '2023-10-05 00:30:00',
+            ['2023-10-05 00:30:00'],
+            id='downstream_daily_and_upstream_is_yearly',
         ),
         pytest.param(
             DagRun(
@@ -202,7 +195,13 @@ class DagRun:
                 '0 0 * * 5',
             ),
             '30 * * * *',
-            '2024-01-04 23:30:00',
+            (
+                logical_date.isoformat()
+                for logical_date in pendulum.interval(
+                    pendulum.parse('2023-12-29 00:30:00'),  # type: ignore
+                    pendulum.parse('2024-01-04 23:30:00'),  # type: ignore
+                ).range(unit='hours')
+            ),
             id='downstream_weekly_and_upstream_is_hourly',
         ),
     ],
@@ -210,14 +209,20 @@ class DagRun:
 def test_upstream_logical_date_resolves_correctly(
     downstream_run: DagRun,
     upstream_schedule: str,
-    expected_upstream_logical_date: str,
+    expected_upstream_logical_dates: Iterable[str],
 ):
-    upstream_logical_date = resolve_upstream_logical_date(
-        data_interval_start=downstream_run.data_interval_start,
-        data_interval_end=downstream_run.data_interval_end,
-        upstream_schedule=upstream_schedule,
-    ).isoformat()
-    expected_upstream_logical_date = pendulum.parse(
-        expected_upstream_logical_date
-    ).isoformat()
-    assert upstream_logical_date == expected_upstream_logical_date
+    resolved_upstream_logical_dates = map(
+        lambda logical_date: logical_date.isoformat(),
+        resolve_upstream_logical_dates(
+            data_interval_start=downstream_run.data_interval_start,
+            data_interval_end=downstream_run.data_interval_end,
+            upstream_schedule=upstream_schedule,
+        ),
+    )
+    _expected_upstream_logical_dates = map(
+        lambda logical_date: pendulum.parse(logical_date).isoformat(),  # type: ignore
+        expected_upstream_logical_dates,
+    )
+    assert list(resolved_upstream_logical_dates) == list(
+        _expected_upstream_logical_dates
+    )
